@@ -131,12 +131,15 @@ export class Detectors {
       const where = typed?.label ? ` typed into ${typed.label} on ${typed.url}` : '';
       await this.add(page, 'html-injection', 'high', 'Input comes back as HTML',
         `The marker <${tag}>${where} appeared on this page as a real element, not as text. Input is reaching the page's HTML unescaped; a script tag would run the same way (cross-site scripting).`,
-        `inject:${n}`);
+        // One finding per field and page it shows up on, however many markers go through it.
+        `inject:${typed ? `${pathOf(typed.url)}|${typed.selector}` : n}->${pathOf(page.url())}`);
     }
     for (const leak of LEAKS) {
       const match = leak.pattern.exec(seen.text);
       if (match) {
-        const at = Math.max(0, match.index - 80);
+        // A little context before the match, starting at a word boundary.
+        let at = Math.max(0, match.index - 80);
+        while (at > 0 && !/\s/.test(seen.text[at - 1])) at--;
         await this.add(page, 'error-leak', 'high', `Error details shown to the user (${leak.name})`,
           seen.text.slice(at, match.index + match[0].length + 120).replace(/\s+/g, ' ').trim(), `leak:${leak.name}:${pathOf(page.url())}`);
       }

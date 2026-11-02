@@ -9,6 +9,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      OTLP_ENDPOINT: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,5 +20,15 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run typecheck
-      - run: npm test
+      - name: Test
+        run: npm test -- --reporter=default --reporter=junit --outputFile.junit=test-results/junit.xml
+      # Every repo's CI results go to one Grafana dashboard. Only once the repo has the Grafana secrets.
+      - name: Send test results to Grafana
+        if: always() && env.OTLP_ENDPOINT != ''
+        uses: gillersja1/test-results-otel@v1
+        with:
+          results: test-results/junit.xml
+          suite: ci
+          otlp-endpoint: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          otlp-headers: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
       - run: npm run build

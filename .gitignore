@@ -2,3 +2,4 @@ node_modules/
 dist/
 gremlin-report/
 test-output/
+test-results/

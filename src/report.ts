@@ -60,13 +60,16 @@ export function summary(result: RunResult): string {
 const escapeHtml = (text: string) =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
+/** A preview of the page when it happened, cropped to its top; the link opens the full screenshot. */
+const shot = (src: string) => `<a href="${src}"><img src="${src}" alt="The page when it happened (click for full size)" loading="lazy"></a>`;
+
 function html(result: RunResult, opts: Options, outDir: string): string {
   const rows = sortFindings(result.findings).map(f => `
     <article class="finding ${f.severity}">
       <h2><span class="sev">${f.severity}</span> #${f.id} ${escapeHtml(f.title)}${f.seen > 1 ? ` <small>seen ${f.seen} times</small>` : ''}</h2>
       <p>${escapeHtml(f.detail)}</p>
       <p class="where">On <a href="${escapeHtml(f.url)}">${escapeHtml(f.url)}</a></p>
-      ${f.screenshot ? `<img src="${escapeHtml(path.relative(outDir, f.screenshot).replace(/\\/g, '/'))}" alt="The page when it happened" loading="lazy">` : ''}
+      ${f.screenshot ? shot(escapeHtml(path.relative(outDir, f.screenshot).replace(/\\/g, '/'))) : ''}
       <details><summary>Steps (${f.steps.length})</summary><ol>${f.steps.map(s => `<li>${escapeHtml(describe(s))}</li>`).join('')}</ol></details>
       <details><summary>Playwright test to reproduce it</summary><pre>${escapeHtml(reproTest(f))}</pre></details>
     </article>`).join('');
@@ -78,7 +81,7 @@ function html(result: RunResult, opts: Options, outDir: string): string {
   .finding.high { border-left-color: #d93025; } .finding.medium { border-left-color: #f29900; } .finding.low { border-left-color: #8ab4f8; }
   .sev { text-transform: uppercase; font-size: 12px; letter-spacing: .08em; }
   h2 { font-size: 17px; margin: 0 0 6px; } small { font-weight: normal; color: #666; }
-  img { max-width: 100%; border: 1px solid #eee; margin: 6px 0; }
+  img { display: block; width: 100%; height: 240px; object-fit: cover; object-position: top left; border: 1px solid #ddd; border-radius: 4px; margin: 6px 0; }
   pre { background: #f6f8fa; padding: 10px; overflow: auto; font-size: 13px; }
   .where { color: #555; font-size: 13px; word-break: break-all; }
 </style></head><body>
