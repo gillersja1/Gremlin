@@ -1,5 +1,7 @@
 # Gremlin
 
+[![CI](https://github.com/gillersja1/Gremlin/actions/workflows/ci.yml/badge.svg)](https://github.com/gillersja1/Gremlin/actions/workflows/ci.yml)
+
 Turn a gremlin loose on your web app. It explores with [Playwright](https://playwright.dev) like a curious,
 slightly malicious user: following links, typing odd things into fields, ticking boxes and picking options.
 Then it tells you what broke. Every finding comes with the steps that led to it, a screenshot, a full
@@ -69,7 +71,9 @@ gremlin <url> [options]
 
 Its first outing outside the test suite was against [Playwright Dungeon Crawl](https://github.com/gillersja1/PlaywrightDungeonCrawl-Starter),
 running locally: 250 actions over 40 pages, forms included, with no injections, crashes or leaks. It did
-find that the dungeon sends no Content-Security-Policy, X-Content-Type-Options or anti-framing headers.
+find that the dungeon sent no Content-Security-Policy, X-Content-Type-Options or anti-framing headers. The
+dungeon now sends all three (with a nonce-based CSP), and the same run, same seed, comes back with zero
+findings.
 
 ## Development
 
