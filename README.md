@@ -25,6 +25,16 @@ It finds the warning signs without exploiting them. The only HTML it types is a 
 `<script>` would too. Everything else is what real users type by accident: apostrophes, emoji, very long
 text, odd numbers and dates.
 
+## What you get
+
+A run against the deliberately buggy site in this repo's tests: 150 actions in 33 seconds, 11 findings.
+
+![A Gremlin report: "Gremlin took 150 actions across 14 pages in 33s. Findings: 11 (4 high, 3 medium, 4 low)", then a high-severity server error 500 and a .NET stack trace shown to the user, each with a screenshot of the page.](docs/report-summary.png)
+
+Each finding opens up into the steps that led to it and a Playwright test that replays them:
+
+![A finding, "Input comes back as HTML": the marker typed into the Display name field appeared on the page as a real element. Below it, the seven steps that led there and the matching Playwright test.](docs/report-finding.png)
+
 ## Quick start
 
 ```bash

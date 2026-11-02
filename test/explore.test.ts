@@ -61,6 +61,12 @@ describe('a run on the buggy site', () => {
     expect(result.skipped['leaves the allowed hosts']).toBeGreaterThan(0);
   });
 
+  it('reports an injection once per field, however many markers go through it', () => {
+    const injections = result.findings.filter(f => f.kind === 'html-injection');
+    const fields = injections.map(f => /typed into (textbox "[^"]+" on \S+)/.exec(f.detail)![1] + ' -> ' + f.url);
+    expect(new Set(fields).size).toBe(fields.length);
+  });
+
   it('reports each problem once, counting repeats', () => {
     const headerFindings = result.findings.filter(f => f.kind === 'missing-header');
     expect(new Set(headerFindings.map(f => f.title)).size).toBe(headerFindings.length);
