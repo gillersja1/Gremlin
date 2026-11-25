@@ -1,5 +1,6 @@
 node_modules/
 dist/
-gremlin-report/
+gremlin-report*/
 test-output/
 test-results/
+gremlin-session*.json

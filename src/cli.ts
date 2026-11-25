@@ -1,7 +1,9 @@
 #!/usr/bin/env node
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { explore } from './explore.js';
+import { saveSession } from './session.js';
 import { summary, writeReport } from './report.js';
 import { SEVERITY_ORDER, type Options, type Severity } from './types.js';
 
@@ -9,6 +11,8 @@ const USAGE = `gremlin: let a gremlin loose on a web app you own, and see what b
 
 Usage:
   gremlin <url> [options]
+  gremlin save-session <url> [--to <file>]   Sign in by hand in a browser and save the session
+                                             (default file: gremlin-session.json)
 
 Options:
   --actions <n>      How many things to try (default: 200)
@@ -17,8 +21,12 @@ Options:
   --allow <host>     Another host it may visit, e.g. api.example.com:8443 (repeatable)
   --submit-forms     Submit forms and press Enter in fields. This can create or change data.
   --unsafe           Also click things labelled delete, pay, log out and the like.
+  --avoid <text>     Also leave alone anything whose label contains this, e.g. "leaderboard" (repeatable)
   --mobile           Explore on a phone-sized screen
   --headed           Watch it in a visible browser
+  --session <file>   Start signed in, from a session saved with save-session
+  --login <script>   Start signed in by running a .js or .mjs script first; it should
+                     export default async (page) => { /* sign in */ }
   --out <dir>        Where to write the report (default: gremlin-report)
   --fail-on <level>  Exit with code 1 if anything this severe is found: high, medium, low or never (default: high)
   --authorized       Required for anything other than localhost: you confirm you own the site
@@ -44,6 +52,9 @@ export function parseOptions(argv: string[]): Options | { error: string } | 'hel
       out: { type: 'string', default: 'gremlin-report' },
       'fail-on': { type: 'string', default: 'high' },
       authorized: { type: 'boolean', default: false },
+      avoid: { type: 'string', multiple: true, default: [] },
+      session: { type: 'string' },
+      login: { type: 'string' },
       help: { type: 'boolean', short: 'h', default: false },
     },
   });
@@ -77,6 +88,11 @@ export function parseOptions(argv: string[]): Options | { error: string } | 'hel
   if (!Number.isInteger(seed)) return { error: '--seed must be a whole number.' };
   const failOn = values['fail-on'] as string;
   if (failOn !== 'never' && !SEVERITY_ORDER.includes(failOn as Severity)) return { error: '--fail-on must be high, medium, low or never.' };
+  const session = values.session as string | undefined;
+  const loginScript = values.login as string | undefined;
+  if (session && loginScript) return { error: 'Use --session or --login, not both.' };
+  if (session && !existsSync(session)) return { error: `No saved session at ${session}. Make one with: gremlin save-session ${url.href}` };
+  if (loginScript && !existsSync(loginScript)) return { error: `No login script at ${loginScript}.` };
 
   return {
     startUrl: url.href,
@@ -90,10 +106,47 @@ export function parseOptions(argv: string[]): Options | { error: string } | 'hel
     headed: values.headed as boolean,
     outDir: values.out as string,
     failOn: failOn as Severity | 'never',
+    ...((values.avoid as string[]).length ? { avoid: values.avoid as string[] } : {}),
+    ...(session ? { session } : {}),
+    ...(loginScript ? { loginScript } : {}),
   };
 }
 
+/** Parses `gremlin save-session <url> [--to <file>]`. */
+export function parseSaveSession(argv: string[]): { url: string; file: string } | { error: string } {
+  const { values, positionals } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options: { to: { type: 'string', default: 'gremlin-session.json' } },
+  });
+  const [start] = positionals;
+  if (!start) return { error: 'Give save-session the URL of the page where you sign in.' };
+  try {
+    const url = new URL(start);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return { error: 'Only http and https sites can be signed in to.' };
+    return { url: url.href, file: values.to as string };
+  } catch {
+    return { error: `"${start}" isn't a URL. Include the scheme, e.g. http://localhost:3000/login.` };
+  }
+}
+
 async function main(argv: string[]): Promise<number> {
+  if (argv[0] === 'save-session') {
+    let target;
+    try {
+      target = parseSaveSession(argv.slice(1));
+    } catch (error) {
+      console.error(`${(error as Error).message}\n\n${USAGE}`);
+      return 2;
+    }
+    if ('error' in target) {
+      console.error(target.error);
+      return 2;
+    }
+    await saveSession(target.url, target.file);
+    return 0;
+  }
+
   let parsed;
   try {
     parsed = parseOptions(argv);
@@ -112,6 +165,8 @@ async function main(argv: string[]): Promise<number> {
   const opts = parsed;
   console.log(`Releasing the gremlin on ${opts.startUrl} (seed ${opts.seed}, up to ${opts.maxActions} actions)`);
   console.log(`  Allowed hosts: ${opts.allow.join(', ')}${opts.submitForms ? '; submitting forms' : ''}${opts.unsafe ? '; UNSAFE: clicking destructive-looking controls' : ''}`);
+  if (opts.session) console.log(`  Signed in from ${opts.session}`);
+  if (opts.loginScript) console.log(`  Signing in with ${opts.loginScript}`);
 
   const result = await explore(opts, message => console.log(message));
   const report = await writeReport(result, opts);

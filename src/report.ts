@@ -4,13 +4,21 @@ import { describe, type RunResult } from './explore.js';
 import { SEVERITY_ORDER, type Finding, type Options, type Step } from './types.js';
 
 /** A Playwright test that replays the steps behind a finding. */
-export function reproTest(finding: Finding): string {
+export function reproTest(finding: Finding, signIn: Pick<Options, 'session' | 'loginScript'> = {}): string {
   const lines = finding.steps.map(stepCode);
+  const setup: string[] = [];
+  if (signIn.session) {
+    setup.push('// The gremlin was signed in. This replays from the same saved session; save a fresh one if it has expired.');
+    setup.push(`test.use({ storageState: ${JSON.stringify(signIn.session.replace(/\\/g, '/'))} });`);
+  } else if (signIn.loginScript) {
+    setup.push(`// The gremlin was signed in by ${signIn.loginScript.replace(/\\/g, '/')}. Sign in the same way before these steps.`);
+  }
   return [
     "import { test } from '@playwright/test';",
     '',
     `// Gremlin finding ${finding.id} (${finding.severity}): ${finding.title}`,
     `// ${finding.detail.replace(/\s+/g, ' ').slice(0, 200)}`,
+    ...setup,
     `test(${JSON.stringify(`gremlin #${finding.id}: ${finding.title}`)}, async ({ page }) => {`,
     ...lines.map(line => `  ${line}`),
     '  // Now look for what the gremlin saw.',
@@ -52,9 +60,14 @@ export function summary(result: RunResult): string {
     lines.push(`  [${f.severity.toUpperCase().padEnd(6)}] #${f.id} ${f.title}${f.seen > 1 ? ` (x${f.seen})` : ''}`);
     lines.push(`           ${f.detail.replace(/\s+/g, ' ').slice(0, 160)}`);
   }
+  if (result.signedOut) lines.push(signedOutNote(result.signedOut));
   const skips = Object.entries(result.skipped);
   if (skips.length) lines.push(`Left alone: ${skips.map(([why, n]) => `${n} ${why}`).join(', ')}.`);
   return lines.join('\n');
+}
+
+export function signedOutNote(signedOut: NonNullable<RunResult['signedOut']>): string {
+  return `Signed out after action ${signedOut.afterActions}: ${signedOut.cookies.join(', ')} went away, so later pages were probably seen signed out.`;
 }
 
 const escapeHtml = (text: string) =>
@@ -71,7 +84,7 @@ function html(result: RunResult, opts: Options, outDir: string): string {
       <p class="where">On <a href="${escapeHtml(f.url)}">${escapeHtml(f.url)}</a></p>
       ${f.screenshot ? shot(escapeHtml(path.relative(outDir, f.screenshot).replace(/\\/g, '/'))) : ''}
       <details><summary>Steps (${f.steps.length})</summary><ol>${f.steps.map(s => `<li>${escapeHtml(describe(s))}</li>`).join('')}</ol></details>
-      <details><summary>Playwright test to reproduce it</summary><pre>${escapeHtml(reproTest(f))}</pre></details>
+      <details><summary>Playwright test to reproduce it</summary><pre>${escapeHtml(reproTest(f, opts))}</pre></details>
     </article>`).join('');
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Gremlin report: ${escapeHtml(opts.startUrl)}</title>
@@ -84,11 +97,14 @@ function html(result: RunResult, opts: Options, outDir: string): string {
   img { display: block; width: 100%; height: 240px; object-fit: cover; object-position: top left; border: 1px solid #ddd; border-radius: 4px; margin: 6px 0; }
   pre { background: #f6f8fa; padding: 10px; overflow: auto; font-size: 13px; }
   .where { color: #555; font-size: 13px; word-break: break-all; }
+  .warn { background: #fef7e0; border: 1px solid #f29900; border-radius: 6px; padding: 8px 12px; }
 </style></head><body>
 <h1>Gremlin report</h1>
 <p>${escapeHtml(summary(result).split('\n').slice(0, 2).join(' '))}</p>
 <p>Started at ${escapeHtml(opts.startUrl)} with seed ${opts.seed}. Replay this run with <code>--seed ${opts.seed}</code>.
 Full trace: <code>npx playwright show-trace ${escapeHtml(path.relative(process.cwd(), result.trace))}</code></p>
+${opts.session || opts.loginScript ? `<p>Explored signed in (${escapeHtml(opts.session ? `session ${opts.session}` : `login script ${opts.loginScript}`)}). The trace holds the session's cookies, so don't share it.</p>` : ''}
+${result.signedOut ? `<p class="warn">${escapeHtml(signedOutNote(result.signedOut))}</p>` : ''}
 ${rows || '<p>Nothing found. The gremlin is disappointed.</p>'}
 </body></html>`;
 }
@@ -100,7 +116,7 @@ export async function writeReport(result: RunResult, opts: Options): Promise<str
   await mkdir(reproDir, { recursive: true });
   await writeFile(path.join(outDir, 'report.json'), JSON.stringify({ options: opts, ...result }, null, 2));
   for (const f of result.findings) {
-    await writeFile(path.join(reproDir, `finding-${f.id}.spec.ts`), reproTest(f));
+    await writeFile(path.join(reproDir, `finding-${f.id}.spec.ts`), reproTest(f, opts));
   }
   const report = path.join(outDir, 'report.html');
   await writeFile(report, html(result, opts, outDir));

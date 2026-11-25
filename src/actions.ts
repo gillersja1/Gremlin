@@ -97,7 +97,9 @@ export function isAllowedUrl(url: string, allow: string[]): boolean {
 }
 
 /** Why the gremlin won't touch a candidate, or undefined if it may. */
-export function skipReason(c: Candidate, opts: Pick<Options, 'allow' | 'submitForms' | 'unsafe'>): string | undefined {
+export function skipReason(c: Candidate, opts: Pick<Options, 'allow' | 'submitForms' | 'unsafe' | 'avoid'>): string | undefined {
+  const label = c.label.toLowerCase();
+  if (opts.avoid?.some(text => label.includes(text.toLowerCase()))) return 'on the --avoid list';
   if (c.role === 'link') {
     if (!c.href) return 'no address';
     if (!isAllowedUrl(c.href, opts.allow)) return 'leaves the allowed hosts';

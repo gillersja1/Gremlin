@@ -53,10 +53,16 @@ export interface Options {
   submitForms: boolean;
   /** Also click things labelled delete, pay, log out and so on. */
   unsafe: boolean;
+  /** More labels to leave alone (case-insensitive, part of the label is enough), even with --unsafe. */
+  avoid?: string[];
   /** Use a phone-sized viewport. */
   mobile: boolean;
   headed: boolean;
   outDir: string;
   /** Exit with a failure if anything at or above this severity is found. */
   failOn: Severity | 'never';
+  /** A saved session (Playwright storage state) to start signed in from. */
+  session?: string;
+  /** A script that signs in before the gremlin starts. */
+  loginScript?: string;
 }

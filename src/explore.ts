@@ -5,6 +5,7 @@ import { choose, discover, isAllowedUrl, perform, skipReason, stripHash } from '
 import { Detectors } from './detectors.js';
 import { markersIn } from './payloads.js';
 import { Random } from './random.js';
+import { cookieKeys, lostCookies, runLoginScript } from './session.js';
 import type { Finding, Options, Step } from './types.js';
 
 export interface RunResult {
@@ -14,6 +15,8 @@ export interface RunResult {
   skipped: Record<string, number>;
   durationMs: number;
   trace: string;
+  /** When the run started signed in and lost its session cookies: which ones, and after how many actions. */
+  signedOut?: { afterActions: number; cookies: string[] };
 }
 
 const MAX_TRAIL = 40;
@@ -32,13 +35,40 @@ export async function explore(opts: Options, log: (message: string) => void = ()
     acceptDownloads: false,
     // Leave dialogs to the gremlin's own handler below.
     ignoreHTTPSErrors: false,
+    storageState: opts.session,
   });
-  await context.tracing.start({ screenshots: true, snapshots: true });
-  detectors.watch(context);
 
   const page = await context.newPage();
+  // Sign in before tracing starts, so whatever the script types stays out of the trace.
+  if (opts.loginScript) {
+    try {
+      await runLoginScript(opts.loginScript, page, context);
+    } catch (error) {
+      await browser.close();
+      throw new Error(`The login script failed: ${(error as Error).message.split('\n')[0]}`);
+    }
+    log('  signed in with the login script');
+  }
+
+  await context.tracing.start({ screenshots: true, snapshots: true });
+  detectors.watch(context);
   // alert(), confirm() and friends would stop everything; dismiss them and carry on.
   page.on('dialog', dialog => dialog.dismiss().catch(() => {}));
+
+  // Started signed in? Note the session's cookies, to notice if the gremlin gets signed out.
+  const signedIn = Boolean(opts.session || opts.loginScript);
+  const sessionCookies = signedIn ? cookieKeys(await context.cookies(), opts.allow) : new Set<string>();
+  if (signedIn && sessionCookies.size === 0) {
+    log(`  warning: the session has no cookies for ${opts.allow.join(', ')}, so the gremlin is probably not signed in`);
+  }
+  let signedOut: RunResult['signedOut'];
+  const checkSession = async () => {
+    if (signedOut || sessionCookies.size === 0) return;
+    const lost = lostCookies(sessionCookies, cookieKeys(await context.cookies(), opts.allow));
+    if (lost.length === 0) return;
+    signedOut = { afterActions: actions, cookies: lost };
+    log(`  warning: session cookies gone after action ${actions} (${lost.join(', ')}); the rest of the run may be signed out`);
+  };
 
   const started = Date.now();
   const deadline = started + opts.maxMinutes * 60_000;
@@ -102,6 +132,7 @@ export async function explore(opts: Options, log: (message: string) => void = ()
       detectors.attachSteps(trail);
       await detectors.scan(page);
       detectors.attachSteps(trail);
+      await checkSession();
     }
     await detectors.checkCookies(context, page);
     detectors.attachSteps(trail);
@@ -118,6 +149,7 @@ export async function explore(opts: Options, log: (message: string) => void = ()
     skipped,
     durationMs: Date.now() - started,
     trace: path.join(outDir, 'trace.zip'),
+    ...(signedOut ? { signedOut } : {}),
   };
 }
 

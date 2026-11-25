@@ -61,6 +61,7 @@ whole run is in `gremlin-report/trace.zip` (`npx playwright show-trace gremlin-r
 
 ```text
 gremlin <url> [options]
+gremlin save-session <url> [--to <file>]   (default file: gremlin-session.json)
 
   --actions <n>      How many things to try (default: 200)
   --minutes <n>      Stop after this long, whichever comes first (default: 5)
@@ -68,14 +69,62 @@ gremlin <url> [options]
   --allow <host>     Another host it may visit (repeatable)
   --submit-forms     Submit forms and press Enter in fields
   --unsafe           Also click destructive-looking controls
+  --avoid <text>     Also leave alone anything whose label contains this (repeatable)
   --mobile           Explore on a phone-sized screen
   --headed           Watch it in a visible browser
+  --session <file>   Start signed in, from a session saved with save-session
+  --login <script>   Start signed in by running a login script first
   --out <dir>        Where to write the report (default: gremlin-report)
   --fail-on <level>  Exit 1 if anything this severe is found: high, medium, low or never (default: high)
   --authorized       Required for anything other than localhost
 ```
 
 `--fail-on` makes it a CI check: run your app, release the gremlin, and fail the build on high findings.
+
+## Exploring signed in
+
+Most bugs live behind the sign-in page. There are two ways to let the gremlin in.
+
+**Sign in by hand, once.** This works with any sign-in, including GitHub, Google and two-factor:
+
+```bash
+npx tsx src/cli.ts save-session https://staging.example.com/login
+# sign in in the browser that opens, then press Enter in the terminal (or close the browser)
+npx tsx src/cli.ts https://staging.example.com/ --authorized --session gremlin-session.json
+```
+
+**Or with a script**, for a plain username and password form (handy in CI, where nobody can type):
+
+```js
+// login.mjs
+export default async page => {
+  await page.goto('http://localhost:3000/login');
+  await page.getByLabel('Email').fill(process.env.TEST_USER);
+  await page.getByLabel('Password').fill(process.env.TEST_PASSWORD);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.waitForURL('**/dashboard');
+};
+```
+
+```bash
+npx tsx src/cli.ts http://localhost:3000/dashboard --login login.mjs
+```
+
+While it explores, the gremlin watches the session's cookies. If they disappear (an expired session, or a
+sign-out link it was allowed to click with `--unsafe`), it says after which action, so you know which
+pages it saw signed out. The repro tests start from the same saved session.
+
+Signed in, a click can change real data, and not every button that saves says "delete" or "pay". Many save
+through JavaScript rather than a form, so `--submit-forms` being off doesn't stop them. Add the labels of
+anything that would change your account with `--avoid`, e.g. `--avoid leaderboard --avoid certificate`.
+
+`save-session` keeps only the cookies of the site you signed in to. Signing in through GitHub or Google
+also leaves that provider's cookies, which are a login to your account there, and the gremlin doesn't
+need them.
+
+Use a test account. A saved session works like a password, and so do the trace and screenshots from a
+signed-in run, so keep them out of git and don't share them. `gremlin-session*.json` is already in
+`.gitignore`. The login script runs before tracing starts, so what it types isn't recorded.
 
 ## First catch
 
