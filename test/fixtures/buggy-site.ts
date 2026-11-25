@@ -13,6 +13,10 @@ const page = (title: string, body: string) => `<!doctype html><html lang="en"><h
 <body><nav><a href="/">Home</a> <a href="/search">Search</a> <a href="/profile">Profile</a> <a href="/about">About</a></nav>
 <h1>${title}</h1>${body}</body></html>`;
 
+const membersPage = (title: string, body: string) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title}</title></head>
+<body><nav><a href="/members">Members</a> <a href="/members/vault">The vault</a> <a href="/members/sign-out">Sign out</a></nav>
+<h1>${title}</h1>${body}</body></html>`;
+
 export async function startBuggySite(): Promise<BuggySite> {
   const hits = new Map<string, number>();
   const server = http.createServer((req, res) => {
@@ -22,6 +26,46 @@ export async function startBuggySite(): Promise<BuggySite> {
       res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', ...headers });
       res.end(html);
     };
+
+    // A members' area, not linked from the public pages, behind a sign-in cookie.
+    const member = /(?:^|;\s*)member=yes(?:;|$)/.test(req.headers.cookie ?? '');
+    if (url.pathname === '/login') {
+      if (req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+          const form = new URLSearchParams(body);
+          if (form.get('user') === 'gremlin' && form.get('password') === 'letmein') {
+            res.writeHead(303, { location: '/members', 'set-cookie': 'member=yes; Path=/; HttpOnly; SameSite=Lax' });
+            res.end();
+          } else {
+            send(401, page('Sign in', '<p>Wrong name or password.</p>'));
+          }
+        });
+        return;
+      }
+      return send(200, page('Sign in', `
+        <form method="post" action="/login"><label>User <input name="user"></label>
+        <label>Password <input name="password" type="password"></label><button>Sign in</button></form>`));
+    }
+    if (url.pathname.startsWith('/members')) {
+      if (!member) {
+        res.writeHead(302, { location: '/login' });
+        return res.end();
+      }
+      switch (url.pathname) {
+        case '/members':
+          return send(200, membersPage('Members', '<p>Welcome back.</p>'));
+        case '/members/vault':
+          // Bug: a members-only page whose script throws.
+          return send(200, membersPage('Vault', '<p>Treasure.</p><script>vaultTreasure.count()</script>'));
+        case '/members/sign-out':
+          return send(200, page('Signed out', '<p>Bye.</p>'), { 'set-cookie': 'member=; Path=/; Max-Age=0' });
+        case '/members/expire':
+          // The session ends by itself, as one would when it times out.
+          return send(200, membersPage('Members', '<p>Your session has ended.</p>'), { 'set-cookie': 'member=; Path=/; Max-Age=0' });
+      }
+    }
 
     switch (url.pathname) {
       case '/':

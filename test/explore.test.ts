@@ -70,6 +70,11 @@ describe('a run on the buggy site', () => {
   it('reports each problem once, counting repeats', () => {
     const headerFindings = result.findings.filter(f => f.kind === 'missing-header');
     expect(new Set(headerFindings.map(f => f.title)).size).toBe(headerFindings.length);
+    // Each names the response that lacked the header, not whatever page was on screen (once about:blank).
+    for (const f of headerFindings) {
+      expect(f.url.startsWith(site.url)).toBe(true);
+      expect(f.detail).toContain(`First seen on ${f.url}`);
+    }
   });
 
   it('writes a report with a repro test for every finding', async () => {

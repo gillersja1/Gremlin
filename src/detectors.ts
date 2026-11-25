@@ -112,7 +112,11 @@ export class Detectors {
       const key = `header:${url.host}:${header}`;
       if (this.checkedHeaders.has(key)) continue;
       this.checkedHeaders.add(key);
-      this.add(page, 'missing-header', 'low', `Missing security header: ${header}`, detail, key, { screenshot: false });
+      // The response that lacked it, not the page on screen: that can still be the last page, or about:blank,
+      // and a redirect never shows at all.
+      const status = response.status();
+      const where = status >= 300 && status < 400 ? ` First seen on a ${status} redirect from ${url.href}.` : ` First seen on ${url.href}.`;
+      this.add(page, 'missing-header', 'low', `Missing security header: ${header}`, detail + where, key, { screenshot: false, url: url.href });
     }
   }
 
@@ -168,14 +172,14 @@ export class Detectors {
   }
 
   private async add(page: Page, kind: FindingKind, severity: Severity, title: string, detail: string, key: string,
-    { screenshot = true }: { screenshot?: boolean } = {}) {
+    { screenshot = true, url }: { screenshot?: boolean; url?: string } = {}) {
     const existing = this.findings.get(key);
     if (existing) {
       existing.seen++;
       return;
     }
     const finding: Finding = {
-      id: this.nextId++, kind, severity, title, detail, url: page.url(), steps: [], seen: 1,
+      id: this.nextId++, kind, severity, title, detail, url: url ?? page.url(), steps: [], seen: 1,
     };
     this.findings.set(key, finding);
     this.fresh.push(finding);
